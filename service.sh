@@ -80,84 +80,19 @@ swap_to_ncm() {
   log "Swap complete"
 }
 
-# Write the inotifyd callback handler to a temp script
-# inotifyd calls it as a child process with: $1=event $2=dir $3=filename
-HANDLER=/data/local/tmp/ncm-onconfig.sh
-cat > "$HANDLER" << 'SCRIPT'
-#!/system/bin/sh
-GADGET=/config/usb_gadget/g1
-CONFIG_DIR=$GADGET/configs/b.1
-NCM_FUNC=$GADGET/functions/ncm.0
-LOGFILE=/data/local/tmp/ncm-tether.log
-
-log() { echo "$(date '+%m-%d %H:%M:%S') $1" >> $LOGFILE; }
-
-find_rndis_links() {
-  for link in $CONFIG_DIR/function* $CONFIG_DIR/f*; do
-    [ -L "$link" ] || continue
-    readlink "$link" | grep -q "rndis" && echo "$link"
-  done
-}
-
-# Only react to create/moved_to events, ignore our own ncm.0 symlinks
-case "$1" in *c*|*e*) ;; *) exit 0;; esac
-[ "$3" = "ncm.0" ] && exit 0
-
-find_rndis_links | grep -q . || exit 0
-log "RNDIS detected (event: $1/$3), swapping to NCM..."
-
-first_slot=""
-for link in $(find_rndis_links); do
-  slot=$(basename "$link")
-  [ -z "$first_slot" ] && first_slot="$slot"
-  rm "$link"
-  log "Removed: $slot"
-done
-[ -z "$first_slot" ] && exit 0
-
-echo "rndis0" > $NCM_FUNC/ifname 2>/dev/null
-ln -s "$NCM_FUNC" "$CONFIG_DIR/$first_slot"
-log "Created: $first_slot -> ncm.0"
-
-udc=$(cat $GADGET/UDC)
-echo "" > $GADGET/UDC
-sleep 0.3
-echo "$udc" > $GADGET/UDC
-log "UDC rebound: $udc"
-
-sleep 1
-if ip link show usb0 >/dev/null 2>&1; then
-  ip link set usb0 down
-  ip link set usb0 name rndis0
-  ip link set rndis0 up
-  log "Renamed usb0 -> rndis0"
-fi
-ndc tether interface add rndis0 2>/dev/null
-log "Swap complete"
-SCRIPT
-chmod 755 "$HANDLER"
-
-# Main loop
-if command -v inotifyd >/dev/null 2>&1; then
-  log "Using inotifyd (event-driven)"
-  while true; do
-    # inotifyd blocks until configfs event; zero idle CPU
-    # c=create, d=delete, e=moved_to
-    inotifyd "$HANDLER" "$CONFIG_DIR:cde" >/dev/null 2>&1
-    sleep 0.5
-  done
-else
-  log "inotifyd not found, falling back to conditional polling"
-  while true; do
-    if [ "$(cat /sys/class/power_supply/usb/online 2>/dev/null)" = "1" ] ||
-       [ -d "$GADGET/functions/rndis.0" ]; then
-      if find_rndis_links | grep -q .; then
-        log "RNDIS detected, swapping to NCM..."
-        swap_to_ncm
-      fi
-      sleep 2
-    else
-      sleep 10
+# Main loop - conditional polling
+# USB disconnected: sleep 30s (near-zero CPU)
+# USB connected: sleep 3s (fast enough to catch RNDIS before tethering stabilizes)
+log "Starting conditional polling"
+while true; do
+  if [ "$(cat /sys/class/power_supply/usb/online 2>/dev/null)" = "1" ] ||
+     [ -d "$GADGET/functions/rndis.0" ]; then
+    if find_rndis_links | grep -q .; then
+      log "RNDIS detected, swapping to NCM..."
+      swap_to_ncm
     fi
-  done
-fi
+    sleep 3
+  else
+    sleep 30
+  fi
+done
