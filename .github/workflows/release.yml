@@ -15,18 +15,38 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk
+
+      - name: Build Rust Binary
+        run: |
+          cd uevent-listener
+          cargo ndk -t aarch64-linux-android build --release
+
       - name: Get Module Info
         id: module_info
         run: |
-          ID=$(grep '^id=' module.prop | cut -d= -f2)
-          VERSION=$(grep '^version=' module.prop | cut -d= -f2)
+          ID=$(grep '^id=' NCM-Tether-KernelSU/module.prop | cut -d= -f2)
+          VERSION=$(grep '^version=' NCM-Tether-KernelSU/module.prop | cut -d= -f2)
           echo "ID=$ID" >> $GITHUB_ENV
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "FILENAME=${ID}-${VERSION}.zip" >> $GITHUB_ENV
 
+      - name: Prepare Module
+        run: |
+          mkdir -p NCM-Tether-KernelSU/bin
+          cp uevent-listener/target/aarch64-linux-android/release/uevent-listener NCM-Tether-KernelSU/bin/
+          chmod +x NCM-Tether-KernelSU/bin/uevent-listener
+
       - name: Package Module
         run: |
-          zip -r ${{ env.FILENAME }} . -x ".git/*" ".github/*" "*.md"
+          cd NCM-Tether-KernelSU
+          zip -r ../${{ env.FILENAME }} . -x "*.md"
 
       - name: Release
         uses: softprops/action-gh-release@v2
