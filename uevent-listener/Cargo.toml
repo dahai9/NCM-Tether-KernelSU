@@ -1,0 +1,14 @@
+[package]
+name = "uevent-listener"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+libc = "0.2"
+
+[profile.release]
+opt-level = "z"     # Optimize for size
+lto = true          # Enable Link Time Optimization
+codegen-units = 1   # Reduce parallel code generation units to enable more optimizations
+panic = "abort"     # Remove panic unwinding code
+strip = true        # Automatically strip symbols from the binary

@@ -1,0 +1,6 @@
+id=ncm-tether
+name=NCM Tether
+version=v1.0
+versionCode=1
+author=dahai9
+description=Replace RNDIS with NCM for USB tethering - faster and more efficient networking

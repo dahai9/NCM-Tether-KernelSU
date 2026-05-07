@@ -1,0 +1,8 @@
+uevent-listener/target/
+*.zip
+.direnv/
+.venv/
+node_modules/
+dist/
+build/
+*.log
